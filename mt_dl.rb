@@ -1,4 +1,4 @@
-#author: /u/Azr79
+#author: Vatsaev Aslan (@avatsaev)
 
 require 'open-uri'
 require 'json'
