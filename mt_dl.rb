@@ -27,11 +27,11 @@ def download_it(file_descriptor, opts = {})
       file << open(file_descriptor[:uri],
 
       {
-        content_length_proc: lambda{|t| # this callback gives total size of the file
+        content_length_proc: ->(t){ # this callback gives total size of the file
 
           download_s = t #total size of the file in bytes
         },
-        progress_proc: lambda{|s| #this callback is called everytime openuri downloads a new chunck of the file, gives the amount of bytes downloaded so far
+        progress_proc: ->(s){ #this callback is called everytime openuri downloads a new chunck of the file, gives the amount of bytes downloaded so far
 
           if(@threads.count == @file_list.count and @displayer_unlocked) #if all threads are initiated and displayer isn't locked by another thread
 
