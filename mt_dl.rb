@@ -3,11 +3,9 @@
 require 'open-uri'
 require 'json'
 
-@threads = [] #list of threads
+@download_workers = [] #list of threads
 @file_list = [] #files to download {filename: unique_file_name, uri: http_url_with_file_extension}
-@progress_data = [] #contains progress data of each file {tid: thread_id, progress: float_in_percents, filename: self_explanatory}
-@displayer_unlocked = true #this locker helps to synchronise calls to display routine between the threads
-
+@progress_data = [] #contains progress data of each file {tid: thread_id, progress: float_in_percents, filename: self explanatory}
 
 
 ###################################-DOWNLOAD WORKER-##########################################
@@ -26,23 +24,24 @@ def download_it(file_descriptor, opts = {})
 
       file << open(file_descriptor[:uri],
 
-      {
-        content_length_proc: ->(t){ # this callback gives total size of the file
+        {
 
-          download_s = t #total size of the file in bytes
-        },
-        progress_proc: ->(s){ #this callback is called everytime openuri downloads a new chunck of the file, gives the amount of bytes downloaded so far
+          content_length_proc: ->(t){ # this callback gives total size of the file
+            download_s = t #total size of the file in bytes
+          },
 
-          if(@threads.count == @file_list.count and @displayer_unlocked) #if all threads are initiated and displayer isn't locked by another thread
+          progress_proc: ->(s){ #this callback is called everytime openuri downloads a new chunck of the file, gives the amount of bytes downloaded so far
 
-            progress = s*100.0/download_s #transform progress from bytes to percentage
+            if(@download_workers.count == @file_list.count) #if all threads are initiated 
 
-            show_progress(opts[:tid], file_descriptor, progress) #refresh progress display
+              progress = s*100.0/download_s #transform progress from bytes to percentage
 
-          end
+              @progress_data[opts[:tid]][:progress] = progress
 
+            end
+
+          }
         }
-      }
 
       ).read
     end
@@ -54,31 +53,19 @@ end
 
 ######################################-PROGRESS DISPLAY-#################################################
 
-def show_progress(tid, file, progress)
+def show_progress
 
-  if(@displayer_unlocked)# if displayer isn't locked by another thread
-
-    @displayer_unlocked = false # lock it
-
-    @progress_data[tid][:progress] = progress #update the progress of the file downloaded by the current thread
-
-    @progress_data.each do |p|
-       print "Thread-#{p[:tid].to_s}\t"+p[:filename] + ":\t\t\t\t" + p[:progress].round(6).to_s+"%\n" #display progress of each file
-    end
-
-
-    #get the cursor at the top of display
-    @progress_data.each do |p|
-      print "\e[A\r"
-    end
-
-    #flush everything displayed at the bottom of the cursor
-    $stdout.flush
-
-    @displayer_unlocked = true #unlock the displayer so other threads can use it
-
+  @progress_data.each do |p|
+     print "Thread-#{p[:tid].to_s}\t"+p[:filename] + ":\t\t\t\t" + p[:progress].round(6).to_s+"%\n" #display progress of each file
   end
 
+  #get the cursor at the top of display
+  @progress_data.each do |p|
+    print "\e[A\r"
+  end
+
+  #flush everything displayed at the bottom of the cursor
+  $stdout.flush
 
 end
 
@@ -106,12 +93,38 @@ p "there is #{@file_list.count} files to download"
 #setup the threads
 @file_list.count.times do |i|
 
-  @threads << Thread.new do
+  @download_workers << Thread.new do
     filename = @file_list[i][:filename]
     @progress_data << {tid: i, progress: 0.000000, filename: filename}
     download_it(@file_list[i], {tid: i})
-
   end
+
 end
 
-@threads.map(&:join) #let the threads begin
+
+@download_display_worker = Thread.new do
+
+  running = true #downloads are not finished
+
+  while(running) #while downloads are not finished
+
+    show_progress() #refresh the current progress
+
+    @progress_data.each do |p| #for each progress, check if downloads are finished
+
+      running = false # for optimisation reasons, initially we'll consider that all downloads are finished
+
+      if(p[:progress].to_i < 100) # if we find that at least one download is in progress
+        running = true # we take back what we said before
+        break #and break the loop because there's no reason to check the rest of downloads
+      end
+
+    end
+
+  end
+
+end
+
+
+@download_workers.map(&:join) #let the multi-threading begin
+@download_display_worker.join() #show progress
